@@ -122,6 +122,13 @@
 
         // --- Components ---
 
+        const FullScreenLoader = ({ text }) => (
+            <div className="min-h-screen bg-black flex flex-col items-center justify-center animate-in fixed inset-0 z-50">
+                <Loader2 className="animate-spin text-red-600 mb-4" size={40} />
+                <p className="text-zinc-500 font-medium tracking-wide">{text}</p>
+            </div>
+        );
+
         const LoginScreen = ({ onLogin, error }) => (
             <div className="min-h-screen bg-black text-zinc-300 font-sans flex items-center justify-center p-4">
                 <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl animate-in">
@@ -499,13 +506,14 @@
                 v.videoId.toLowerCase().includes(searchQuery.toLowerCase())
             );
 
-            // --- Condition 1: Checking Auth (Very first load) ---
-            if (authLoading) {
+            // --- Condition 1: Unified Loading State (Authentication OR Data Fetching) ---
+            // If we are checking auth, OR if we are logged in but still fetching videos,
+            // we show the SAME full-screen loader to prevent layout shifts.
+            if (authLoading || (user && isFetchingVideos)) {
                 return (
-                    <div className="min-h-screen bg-black flex flex-col items-center justify-center">
-                        <Loader2 className="animate-spin text-red-600 mb-4" size={40} />
-                        <p className="text-zinc-500">Authenticating...</p>
-                    </div>
+                    <FullScreenLoader 
+                        text={authLoading ? "Authenticating..." : "Loading library..."} 
+                    />
                 );
             }
 
@@ -514,11 +522,11 @@
                 return <LoginScreen onLogin={handleGoogleLogin} error={authError} />;
             }
 
-            // --- Condition 3: Logged In (Main App) ---
+            // --- Condition 3: Logged In & Data Ready (Main App) ---
             return (
                 <div className="min-h-screen">
                     {/* Navigation Bar */}
-                    <nav className="sticky top-0 z-40 bg-black/80 backdrop-blur-md border-b border-zinc-800">
+                    <nav className="sticky top-0 z-40 bg-black/80 backdrop-blur-md border-b border-zinc-800 animate-in">
                         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                             <div className="flex items-center justify-between h-16">
                                 <div className="flex items-center gap-3">
@@ -578,19 +586,8 @@
                     </nav>
 
                     {/* Main Content */}
-                    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                        {/* CONDITION LOGIC:
-                           1. If fetching videos -> Show Spinner
-                           2. If not fetching AND have videos -> Show Grid
-                           3. If not fetching AND no videos -> Show Empty State
-                        */}
-                        
-                        {isFetchingVideos ? (
-                            <div className="flex flex-col items-center justify-center min-h-[50vh] animate-in">
-                                <Loader2 className="animate-spin text-red-600 mb-4" size={40} />
-                                <p className="text-zinc-500">Loading library...</p>
-                            </div>
-                        ) : filteredVideos.length > 0 ? (
+                    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in">
+                        {filteredVideos.length > 0 ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                                 {filteredVideos.map(video => (
                                     <VideoCard 
@@ -602,7 +599,7 @@
                                 ))}
                             </div>
                         ) : (
-                            <div className="flex flex-col items-center justify-center py-20 text-center border border-dashed border-zinc-800 rounded-2xl bg-zinc-900/30 animate-in">
+                            <div className="flex flex-col items-center justify-center py-20 text-center border border-dashed border-zinc-800 rounded-2xl bg-zinc-900/30">
                                 <div className="bg-zinc-800/50 p-4 rounded-full mb-4">
                                     <Film size={40} className="text-zinc-600" />
                                 </div>
