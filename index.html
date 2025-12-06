@@ -31,11 +31,11 @@
             background: #52525b; 
         }
         .animate-in {
-            animation: fadeIn 0.3s ease-out forwards;
+            animation: fadeIn 0.4s ease-out forwards;
         }
         @keyframes fadeIn {
-            from { opacity: 0; transform: scale(0.95); }
-            to { opacity: 1; transform: scale(1); }
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
     </style>
 </head>
@@ -68,15 +68,13 @@
         
         // Import Icons
         import { 
-            Trash2, Play, Plus, Link as LinkIcon, ExternalLink, X, Film, Search, AlertCircle, Settings, LogOut, User, AlertTriangle
+            Trash2, Play, Plus, Link as LinkIcon, ExternalLink, X, Film, Search, AlertCircle, Settings, LogOut, User, AlertTriangle, Loader2
         } from 'https://esm.sh/lucide-react@0.378.0';
 
         const React = window.React;
         const { useState, useEffect } = React;
 
         // --- Configuration Logic ---
-        
-        // Your personal config (Fallback for local usage)
         const userFirebaseConfig = {
             apiKey: "AIzaSyAR-ZpJ4QR4AytJyWdGo2VJvKZWL4tGM-s",
             authDomain: "vidstore-9e9c2.firebaseapp.com",
@@ -87,32 +85,26 @@
             measurementId: "G-JV7LVE4Y2V"
         };
 
-        // Environment Detection
         let firebaseConfig;
         let useEnvToken = false;
-        // Use a consistent App ID for your personal deployment
         let activeAppId = 'vidstore-personal-app'; 
 
         if (typeof window.__firebase_config !== 'undefined') {
-            // We are in the AI Preview Environment
             console.log("Using Environment Config");
             firebaseConfig = JSON.parse(window.__firebase_config);
             useEnvToken = true;
             if (typeof window.__app_id !== 'undefined') activeAppId = window.__app_id;
         } else {
-            // We are running on GitHub Pages
             console.log("Using User Config (Deployment Mode)");
             firebaseConfig = userFirebaseConfig;
             useEnvToken = false;
         }
 
-        // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
 
         // --- Helper Functions ---
-
         const extractVideoId = (url) => {
             if (!url) return null;
             const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
@@ -132,7 +124,7 @@
 
         const LoginScreen = ({ onLogin, error }) => (
             <div className="min-h-screen bg-black text-zinc-300 font-sans flex items-center justify-center p-4">
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl">
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl animate-in">
                     <div className="bg-gradient-to-br from-red-600 to-red-800 w-16 h-16 rounded-xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-900/20">
                         <Film size={32} className="text-white" />
                     </div>
@@ -178,7 +170,7 @@
 
             return (
                 <div 
-                    className="group relative bg-zinc-900 rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 border border-zinc-800 hover:border-red-500/30 flex flex-col"
+                    className="group relative bg-zinc-900 rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 border border-zinc-800 hover:border-red-500/30 flex flex-col animate-in"
                     onMouseEnter={() => setIsHovered(true)}
                     onMouseLeave={() => setIsHovered(false)}
                 >
@@ -386,39 +378,40 @@
             const [videos, setVideos] = useState([]);
             const [isAddModalOpen, setIsAddModalOpen] = useState(false);
             const [activeVideo, setActiveVideo] = useState(null);
-            const [loading, setLoading] = useState(true);
+            
+            // State for AUTH loading (Is user logged in?)
+            const [authLoading, setAuthLoading] = useState(true);
+            
+            // State for DATA loading (Are videos fetched?)
+            const [isFetchingVideos, setIsFetchingVideos] = useState(true);
+            
             const [authError, setAuthError] = useState(null);
             const [searchQuery, setSearchQuery] = useState('');
 
             useEffect(() => {
                 const initAuth = async () => {
-                    setLoading(true);
-                    
                     try {
-                        // Force Persistence (Critical for Reloads)
                         await setPersistence(auth, browserLocalPersistence);
                     } catch (e) {
                         console.warn("Persistence error:", e);
                     }
 
-                    // Secure Token Auth (Env Only) - Keeps it working in Chat
                     if (useEnvToken && typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
                         try {
                             await signInWithCustomToken(auth, window.__initial_auth_token);
                         } catch (e) {
                             console.error("Preview auth failed", e);
-                            setLoading(false); // Stop loading to show login screen
+                            setAuthLoading(false);
                         }
                     } else {
-                        // Standalone: We do nothing and wait for user to click "Login with Google"
-                        setLoading(false);
+                        setAuthLoading(false); // Done checking initial auth
                     }
                 };
                 initAuth();
                 
                 const unsubscribe = onAuthStateChanged(auth, (u) => {
                     setUser(u);
-                    setLoading(false); // Auth check complete
+                    setAuthLoading(false); // Definitely done checking auth
                 });
                 return () => unsubscribe();
             }, []);
@@ -437,18 +430,22 @@
             const handleLogout = async () => {
                 try {
                     await signOut(auth);
+                    setVideos([]);
                 } catch (error) {
                     console.error("Logout failed", error);
                 }
             };
 
+            // Fetch Videos
             useEffect(() => {
                 if (!user) {
                     setVideos([]);
                     return;
                 }
 
-                // Query specific to the logged-in user
+                // Start fetching state
+                setIsFetchingVideos(true);
+
                 const q = query(
                     collection(db, 'artifacts', activeAppId, 'users', user.uid, 'videos'),
                     orderBy('createdAt', 'desc')
@@ -461,9 +458,12 @@
                             ...doc.data()
                         }));
                         setVideos(videoList);
+                        // Data has arrived, stop fetching state
+                        setIsFetchingVideos(false);
                     },
                     (error) => {
                         console.error("Firestore error:", error);
+                        setIsFetchingVideos(false); // Stop loading even on error
                     }
                 );
 
@@ -479,6 +479,7 @@
                     });
                 } catch (error) {
                     console.error("Error adding video:", error);
+                    alert("Error saving video. Please check your Firestore Rules.");
                 }
             };
 
@@ -498,12 +499,12 @@
                 v.videoId.toLowerCase().includes(searchQuery.toLowerCase())
             );
 
-            // --- Condition 1: Loading ---
-            if (loading) {
+            // --- Condition 1: Checking Auth (Very first load) ---
+            if (authLoading) {
                 return (
                     <div className="min-h-screen bg-black flex flex-col items-center justify-center">
-                        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-red-500 mb-4"></div>
-                        <p className="text-zinc-500">Initializing...</p>
+                        <Loader2 className="animate-spin text-red-600 mb-4" size={40} />
+                        <p className="text-zinc-500">Authenticating...</p>
                     </div>
                 );
             }
@@ -515,7 +516,7 @@
 
             // --- Condition 3: Logged In (Main App) ---
             return (
-                <div className="min-h-screen animate-in">
+                <div className="min-h-screen">
                     {/* Navigation Bar */}
                     <nav className="sticky top-0 z-40 bg-black/80 backdrop-blur-md border-b border-zinc-800">
                         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -541,7 +542,6 @@
                                 </div>
 
                                 <div className="flex items-center gap-3">
-                                    {/* User Profile UI (Added) */}
                                     {user && (
                                         <div className="flex items-center gap-2 mr-2 bg-zinc-900 pr-4 pl-1 py-1 rounded-full border border-zinc-800">
                                             {user.photoURL ? (
@@ -579,7 +579,18 @@
 
                     {/* Main Content */}
                     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                        {filteredVideos.length > 0 ? (
+                        {/* CONDITION LOGIC:
+                           1. If fetching videos -> Show Spinner
+                           2. If not fetching AND have videos -> Show Grid
+                           3. If not fetching AND no videos -> Show Empty State
+                        */}
+                        
+                        {isFetchingVideos ? (
+                            <div className="flex flex-col items-center justify-center py-20 animate-in">
+                                <Loader2 className="animate-spin text-red-500 mb-4" size={32} />
+                                <p className="text-zinc-500">Loading library...</p>
+                            </div>
+                        ) : filteredVideos.length > 0 ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                                 {filteredVideos.map(video => (
                                     <VideoCard 
@@ -591,7 +602,7 @@
                                 ))}
                             </div>
                         ) : (
-                            <div className="flex flex-col items-center justify-center py-20 text-center border border-dashed border-zinc-800 rounded-2xl bg-zinc-900/30">
+                            <div className="flex flex-col items-center justify-center py-20 text-center border border-dashed border-zinc-800 rounded-2xl bg-zinc-900/30 animate-in">
                                 <div className="bg-zinc-800/50 p-4 rounded-full mb-4">
                                     <Film size={40} className="text-zinc-600" />
                                 </div>
